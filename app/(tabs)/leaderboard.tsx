@@ -27,11 +27,20 @@ export default function LeaderboardScreen() {
   const fetchLeaderboard = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('users')
         .select('*')
         .order('best_value_score', { ascending: false })
         .limit(50);
+
+      // For weekly filter, only show users active in the last 7 days
+      if (filter === 'weekly') {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        query = query.gte('updated_at', weekAgo.toISOString());
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
 

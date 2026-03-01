@@ -36,3 +36,4 @@ Supabase tables: users, scans, badges, leaderboard (calories_per_dollar).
 - Keep building until you see "STOP" in a user message.
 
 You are now in full autonomous mode for BiteBack. Begin by reading the repo and fixing the Supabase credentials setup.
+- If Claude returns token/quota error: immediately stop, write "TOKEN_LIMIT_REACHED — waiting for next cycle" to status.log and exit gracefully.

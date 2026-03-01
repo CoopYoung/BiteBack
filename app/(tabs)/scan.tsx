@@ -61,22 +61,25 @@ export default function ScanScreen() {
     if (!user?.id) return;
 
     try {
-      const receipt = await supabase.from('receipts').insert({
-        user_id: user.id,
-        restaurant_name: 'New Receipt',
-        subtotal: 0,
-        tax: 0,
-        total: 0,
-        total_calories: 0,
-        calories_per_dollar: 0,
-        value_score: 0,
-        image_url: imageUri,
-        raw_ocr_text: '',
-      }) as any;
+      const { data: receiptData, error: insertError } = await supabase
+        .from('receipts')
+        .insert({
+          user_id: user.id,
+          restaurant_name: 'New Receipt',
+          subtotal: 0,
+          tax: 0,
+          total: 0,
+          total_calories: 0,
+          calories_per_dollar: 0,
+          value_score: 0,
+          image_url: imageUri,
+          raw_ocr_text: '',
+        })
+        .select()
+        .single();
 
-      if (receipt.error) throw receipt.error;
-      if (receipt.data && (receipt.data as any[]).length > 0) {
-        const receiptData = receipt.data[0];
+      if (insertError) throw insertError;
+      if (receiptData) {
         router.push({
           pathname: '/(tabs)/results',
           params: { receiptId: receiptData.id, imageUri },

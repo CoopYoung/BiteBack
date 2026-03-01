@@ -18,6 +18,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.warn('Supabase not configured — skipping auth init');
+      setIsLoading(false);
+      return;
+    }
+
     (async () => {
       try {
         const { data, error } = await supabase.auth.getSession();

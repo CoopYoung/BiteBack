@@ -40,8 +40,13 @@ export default function ResultsScreen() {
   };
 
   const handleSave = async () => {
-    if (!restaurantName || !total || !calories) {
+    if (!restaurantName.trim() || !total || !calories) {
       Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    if (parseFloat(total) <= 0 || parseInt(calories) <= 0) {
+      Alert.alert('Error', 'Total and calories must be positive numbers');
       return;
     }
 
@@ -70,13 +75,19 @@ export default function ResultsScreen() {
 
       if (error) throw error;
 
-      await supabase
+      // Update user stats atomically
+      const newTotalScans = (user.total_scans || 0) + 1;
+      const newBestScore = Math.max(user.best_value_score || 0, valueScore);
+      const { error: userError } = await supabase
         .from('users')
         .update({
-          total_scans: (user.total_scans || 0) + 1,
-          best_value_score: Math.max(user.best_value_score || 0, valueScore),
+          total_scans: newTotalScans,
+          best_value_score: newBestScore,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', user.id);
+
+      if (userError) console.warn('Failed to update user stats:', userError);
 
       Alert.alert('Success', 'Receipt saved!', [
         {
