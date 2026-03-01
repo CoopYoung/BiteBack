@@ -12,7 +12,8 @@ import { useRouter } from 'expo-router';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { createDraftReceipt } from '@/lib/services/receipt';
+import { uploadReceiptImage } from '@/lib/services/storage';
 import { COLORS, THEME } from '@/constants/colors';
 import { Camera, Image as ImageIcon } from 'lucide-react-native';
 
