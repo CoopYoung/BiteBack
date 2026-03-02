@@ -1,15 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   SafeAreaView,
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { fetchLeaderboard } from '@/lib/api';
 import { LeaderboardEntry } from '@/types';
 import { COLORS, THEME } from '@/constants/colors';
 import { Trophy, Medal } from 'lucide-react-native';
@@ -18,33 +18,21 @@ export default function LeaderboardScreen() {
   const { user } = useAuth();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'weekly' | 'alltime'>('alltime');
 
   useEffect(() => {
-    fetchLeaderboard();
+    loadLeaderboard();
   }, [filter]);
 
-  const fetchLeaderboard = async () => {
+  const loadLeaderboard = async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('best_value_score', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
-
-      const leaderboardEntries: LeaderboardEntry[] = (data || []).map((userData, index) => ({
-        rank: index + 1,
-        user: userData as any,
-        best_score: userData.best_value_score,
-        total_scans: userData.total_scans,
-      }));
-
-      setEntries(leaderboardEntries);
-    } catch (error) {
-      console.error('Error fetching leaderboard:', error);
+      const data = await fetchLeaderboard(filter);
+      setEntries(data);
+    } catch (err) {
+      setError('Failed to load leaderboard');
     } finally {
       setIsLoading(false);
     }
@@ -55,6 +43,62 @@ export default function LeaderboardScreen() {
     if (rank === 2) return <Medal size={20} color={COLORS.gray400} />;
     if (rank === 3) return <Medal size={20} color={COLORS.warning} />;
     return null;
+  };
+
+  const renderEntry = useCallback(
+    ({ item }: { item: LeaderboardEntry }) => (
+      <View
+        style={[
+          styles.entry,
+          user?.id === item.user.id && styles.entryHighlight,
+        ]}
+      >
+        <View style={styles.rankContainer}>
+          {getRankIcon(item.rank) || (
+            <Text style={styles.rankNumber}>{item.rank}</Text>
+          )}
+        </View>
+
+        <View style={styles.userInfo}>
+          <Text style={styles.username}>{item.user.display_name}</Text>
+          <Text style={styles.stat}>
+            {item.total_scans} scans
+          </Text>
+        </View>
+
+        <View style={styles.scoreContainer}>
+          <Text style={styles.score}>{item.best_score.toFixed(0)}</Text>
+          <Text style={styles.scoreLabel}>cals/$</Text>
+        </View>
+      </View>
+    ),
+    [user?.id]
+  );
+
+  const keyExtractor = useCallback(
+    (item: LeaderboardEntry) => item.user.id,
+    []
+  );
+
+  const renderEmpty = () => {
+    if (isLoading) {
+      return <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />;
+    }
+    if (error) {
+      return (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>{error}</Text>
+          <TouchableOpacity onPress={loadLeaderboard} style={styles.retryButton}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyText}>No leaderboard data yet</Text>
+      </View>
+    );
   };
 
   return (
@@ -91,45 +135,14 @@ export default function LeaderboardScreen() {
         </View>
       </View>
 
-      <ScrollView style={styles.list} contentContainerStyle={styles.listContent}>
-        {isLoading ? (
-          <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
-        ) : entries.length > 0 ? (
-          <>
-            {entries.map((entry) => (
-              <View
-                key={entry.user.id}
-                style={[
-                  styles.entry,
-                  user?.id === entry.user.id && styles.entryHighlight,
-                ]}
-              >
-                <View style={styles.rankContainer}>
-                  {getRankIcon(entry.rank) || (
-                    <Text style={styles.rankNumber}>{entry.rank}</Text>
-                  )}
-                </View>
-
-                <View style={styles.userInfo}>
-                  <Text style={styles.username}>{entry.user.display_name}</Text>
-                  <Text style={styles.stat}>
-                    {entry.total_scans} scans • {entry.best_score.toFixed(0)} cals/$
-                  </Text>
-                </View>
-
-                <View style={styles.scoreContainer}>
-                  <Text style={styles.score}>{entry.best_score.toFixed(0)}</Text>
-                  <Text style={styles.scoreLabel}>cals/$</Text>
-                </View>
-              </View>
-            ))}
-          </>
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>No leaderboard data yet</Text>
-          </View>
-        )}
-      </ScrollView>
+      <FlatList
+        data={entries}
+        renderItem={renderEntry}
+        keyExtractor={keyExtractor}
+        ListEmptyComponent={renderEmpty}
+        contentContainerStyle={styles.listContent}
+        style={styles.list}
+      />
     </SafeAreaView>
   );
 }
@@ -240,5 +253,18 @@ const styles = StyleSheet.create({
   emptyText: {
     color: COLORS.gray400,
     fontSize: THEME.fonts.base,
+  },
+  retryButton: {
+    marginTop: THEME.spacing.md,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
+    borderRadius: THEME.borderRadius.md,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  retryText: {
+    color: COLORS.primary,
+    fontSize: THEME.fonts.sm,
+    fontWeight: '600',
   },
 });

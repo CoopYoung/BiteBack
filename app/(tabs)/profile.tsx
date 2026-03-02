@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { fetchUserBadges } from '@/lib/api';
 import { Badge } from '@/types';
 import { COLORS, THEME } from '@/constants/colors';
 import { LogOut, Settings } from 'lucide-react-native';
@@ -21,38 +21,22 @@ export default function ProfileScreen() {
   const { user, signOut } = useAuth();
   const [badges, setBadges] = useState<Badge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchBadges();
+    loadBadges();
   }, [user?.id]);
 
-  const fetchBadges = async () => {
+  const loadBadges = async () => {
     if (!user?.id) return;
 
     setIsLoading(true);
+    setError(null);
     try {
-      const { data: userBadges, error: badgesError } = await supabase
-        .from('user_badges')
-        .select('badge_id, earned_at')
-        .eq('user_id', user.id);
-
-      if (badgesError) throw badgesError;
-
-      const { data: allBadges, error: allBadgesError } = await supabase
-        .from('badges')
-        .select('*');
-
-      if (allBadgesError) throw allBadgesError;
-
-      const earnedIds = new Set((userBadges || []).map((b) => b.badge_id));
-      const badgesWithStatus = (allBadges || []).map((badge) => ({
-        ...badge,
-        earned: earnedIds.has(badge.id),
-      }));
-
-      setBadges(badgesWithStatus as Badge[]);
-    } catch (error) {
-      console.error('Error fetching badges:', error);
+      const data = await fetchUserBadges(user.id);
+      setBadges(data);
+    } catch (err) {
+      setError('Failed to load badges');
     } finally {
       setIsLoading(false);
     }
@@ -67,7 +51,7 @@ export default function ProfileScreen() {
           try {
             await signOut();
             router.replace('/(auth)');
-          } catch (error) {
+          } catch (err) {
             Alert.alert('Error', 'Failed to sign out');
           }
         },
@@ -107,6 +91,13 @@ export default function ProfileScreen() {
           <Text style={styles.sectionTitle}>Achievements</Text>
           {isLoading ? (
             <ActivityIndicator size="large" color={COLORS.primary} />
+          ) : error ? (
+            <View style={styles.errorState}>
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity onPress={loadBadges} style={styles.retryButton}>
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
           ) : badges.length > 0 ? (
             <View style={styles.badgesGrid}>
               {badges.map((badge) => (
@@ -123,7 +114,9 @@ export default function ProfileScreen() {
                       !badge.earned && styles.badgeIconLocked,
                     ]}
                   >
-                    <Text style={styles.badgeEmoji}>🎖️</Text>
+                    <Text style={styles.badgeEmoji}>
+                      {badge.icon_url || '\uD83C\uDF96\uFE0F'}
+                    </Text>
                   </View>
                   <Text style={styles.badgeName}>{badge.name}</Text>
                   {!badge.earned && (
@@ -231,7 +224,7 @@ const styles = StyleSheet.create({
     gap: THEME.spacing.md,
   },
   badgeItem: {
-    width: '32%',
+    width: '30%',
     backgroundColor: COLORS.gray800,
     paddingVertical: THEME.spacing.md,
     paddingHorizontal: THEME.spacing.sm,
@@ -265,6 +258,27 @@ const styles = StyleSheet.create({
     fontSize: THEME.fonts.xs,
     color: COLORS.gray400,
     marginTop: THEME.spacing.xs,
+  },
+  errorState: {
+    alignItems: 'center',
+    paddingVertical: THEME.spacing.md,
+  },
+  errorText: {
+    color: COLORS.gray400,
+    fontSize: THEME.fonts.base,
+  },
+  retryButton: {
+    marginTop: THEME.spacing.md,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
+    borderRadius: THEME.borderRadius.md,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  retryText: {
+    color: COLORS.primary,
+    fontSize: THEME.fonts.sm,
+    fontWeight: '600',
   },
   settingsButton: {
     flexDirection: 'row',

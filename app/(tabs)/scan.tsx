@@ -12,7 +12,7 @@ import { useRouter } from 'expo-router';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { createDraftReceipt } from '@/lib/services/receipt';
 import { COLORS, THEME } from '@/constants/colors';
 import { Camera, Image as ImageIcon } from 'lucide-react-native';
 
@@ -61,30 +61,13 @@ export default function ScanScreen() {
     if (!user?.id) return;
 
     try {
-      const receipt = await supabase.from('receipts').insert({
-        user_id: user.id,
-        restaurant_name: 'New Receipt',
-        subtotal: 0,
-        tax: 0,
-        total: 0,
-        total_calories: 0,
-        calories_per_dollar: 0,
-        value_score: 0,
-        image_url: imageUri,
-        raw_ocr_text: '',
-      }) as any;
-
-      if (receipt.error) throw receipt.error;
-      if (receipt.data && (receipt.data as any[]).length > 0) {
-        const receiptData = receipt.data[0];
-        router.push({
-          pathname: '/(tabs)/results',
-          params: { receiptId: receiptData.id, imageUri },
-        });
-      }
+      const receiptId = await createDraftReceipt(user.id, imageUri);
+      router.push({
+        pathname: '/(tabs)/results',
+        params: { receiptId, imageUri },
+      });
     } catch (error) {
       Alert.alert('Error', 'Failed to process receipt');
-      console.error(error);
     }
   };
 

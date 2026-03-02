@@ -1,6 +1,31 @@
+import { COLORS } from '@/constants/colors';
+
+/** Score thresholds — must match constants/colors.ts heat map */
+export const SCORE_EXCELLENT = 150;
+export const SCORE_FAIR_MIN = 50;
+
 export function calculateValueScore(calories: number, totalSpent: number): number {
   if (totalSpent <= 0) return 0;
   return calories / totalSpent;
+}
+
+/**
+ * Return the theme color for a cal/$ score.
+ * Uses heat map thresholds: green ≥150, amber 50–149, red <50.
+ */
+export function getScoreColor(score: number): string {
+  if (score >= SCORE_EXCELLENT) return COLORS.excellent;
+  if (score >= SCORE_FAIR_MIN) return COLORS.good;
+  return COLORS.poor;
+}
+
+/**
+ * Return a human-readable label for a score value.
+ */
+export function getScoreLabel(score: number): string {
+  if (score >= SCORE_EXCELLENT) return 'Excellent Deal';
+  if (score >= SCORE_FAIR_MIN) return 'Fair Value';
+  return 'Poor Value';
 }
 
 export function getValueCategory(caloriesPerDollar: number): 'excellent' | 'good' | 'poor' {
