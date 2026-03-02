@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { Receipt, Badge, LeaderboardEntry, User } from '@/types';
 import { calculateValueScore } from '@/lib/utils';
@@ -11,6 +12,7 @@ export async function fetchRecentReceipts(
   userId: string,
   limit: number = 5
 ): Promise<Receipt[]> {
+  const cacheKey = `cache:receipts:${userId}`;
   try {
     const { data, error } = await supabase
       .from('receipts')
@@ -20,8 +22,12 @@ export async function fetchRecentReceipts(
       .limit(limit);
 
     if (error) throw error;
-    return (data ?? []) as Receipt[];
+    const receipts = (data ?? []) as Receipt[];
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(receipts)).catch(() => {});
+    return receipts;
   } catch (error) {
+    const cached = await AsyncStorage.getItem(cacheKey).catch(() => null);
+    if (cached) return JSON.parse(cached) as Receipt[];
     throw new Error(
       `Failed to fetch receipts: ${error instanceof Error ? error.message : String(error)}`
     );
@@ -36,6 +42,7 @@ export async function fetchLeaderboard(
   limit: number = 50,
   city?: string
 ): Promise<LeaderboardEntry[]> {
+  const cacheKey = `cache:leaderboard:${filter}:${city ?? 'all'}`;
   try {
     let query = supabase
       .from('users')
@@ -56,13 +63,17 @@ export async function fetchLeaderboard(
     const { data, error } = await query;
     if (error) throw error;
 
-    return (data ?? []).map((userData, index) => ({
+    const entries = (data ?? []).map((userData, index) => ({
       rank: index + 1,
       user: userData as User,
       best_score: (userData as User).best_value_score,
       total_scans: (userData as User).total_scans,
     }));
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(entries)).catch(() => {});
+    return entries;
   } catch (error) {
+    const cached = await AsyncStorage.getItem(cacheKey).catch(() => null);
+    if (cached) return JSON.parse(cached) as LeaderboardEntry[];
     throw new Error(
       `Failed to fetch leaderboard: ${error instanceof Error ? error.message : String(error)}`
     );
@@ -73,6 +84,7 @@ export async function fetchLeaderboard(
  * Fetch all badges with earned status for a user.
  */
 export async function fetchUserBadges(userId: string): Promise<Badge[]> {
+  const cacheKey = `cache:badges:${userId}`;
   try {
     const { data: userBadges, error: badgesError } = await supabase
       .from('user_badges')
@@ -88,11 +100,15 @@ export async function fetchUserBadges(userId: string): Promise<Badge[]> {
     if (allBadgesError) throw allBadgesError;
 
     const earnedIds = new Set((userBadges ?? []).map((b) => b.badge_id));
-    return (allBadges ?? []).map((badge) => ({
+    const badges = (allBadges ?? []).map((badge) => ({
       ...badge,
       earned: earnedIds.has(badge.id),
     })) as Badge[];
+    await AsyncStorage.setItem(cacheKey, JSON.stringify(badges)).catch(() => {});
+    return badges;
   } catch (error) {
+    const cached = await AsyncStorage.getItem(cacheKey).catch(() => null);
+    if (cached) return JSON.parse(cached) as Badge[];
     throw new Error(
       `Failed to fetch badges: ${error instanceof Error ? error.message : String(error)}`
     );

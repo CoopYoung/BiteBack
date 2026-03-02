@@ -1,5 +1,6 @@
 import '../__mocks__/supabase-module-mock';
 import { mockSupabase, resetSupabaseMocks } from '../__mocks__/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   fetchRecentReceipts,
   fetchLeaderboard,
@@ -9,8 +10,19 @@ import {
   fetchReceipt,
 } from '@/lib/api';
 
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getItem: jest.fn().mockResolvedValue(null),
+    setItem: jest.fn().mockResolvedValue(undefined),
+    removeItem: jest.fn().mockResolvedValue(undefined),
+  },
+  __esModule: true,
+}));
+
 beforeEach(() => {
   resetSupabaseMocks();
+  (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+  (AsyncStorage.setItem as jest.Mock).mockResolvedValue(undefined);
 });
 
 describe('fetchRecentReceipts', () => {
@@ -380,5 +392,118 @@ describe('fetchReceipt', () => {
     } as any);
 
     await expect(fetchReceipt('bad-id')).rejects.toThrow('Failed to fetch receipt');
+  });
+});
+
+describe('AsyncStorage cache fallback', () => {
+  it('fetchRecentReceipts caches on success', async () => {
+    const mockReceipts = [{ id: '1', restaurant_name: 'Test' }];
+
+    const limitMock = jest.fn().mockResolvedValue({
+      data: mockReceipts,
+      error: null,
+    });
+
+    mockSupabase.from.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          order: jest.fn().mockReturnValue({
+            limit: limitMock,
+          }),
+        }),
+      }),
+    } as any);
+
+    await fetchRecentReceipts('user-123');
+
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith(
+      'cache:receipts:user-123',
+      JSON.stringify(mockReceipts)
+    );
+  });
+
+  it('fetchRecentReceipts falls back to cache on error', async () => {
+    const cachedData = [{ id: '1', restaurant_name: 'Cached' }];
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(cachedData));
+
+    const limitMock = jest.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'network error' },
+    });
+
+    mockSupabase.from.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          order: jest.fn().mockReturnValue({
+            limit: limitMock,
+          }),
+        }),
+      }),
+    } as any);
+
+    const result = await fetchRecentReceipts('user-123');
+
+    expect(result).toEqual(cachedData);
+  });
+
+  it('fetchRecentReceipts throws when no cache and error', async () => {
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(null);
+
+    const limitMock = jest.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'network error' },
+    });
+
+    mockSupabase.from.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          order: jest.fn().mockReturnValue({
+            limit: limitMock,
+          }),
+        }),
+      }),
+    } as any);
+
+    await expect(fetchRecentReceipts('user-123')).rejects.toThrow('Failed to fetch receipts');
+  });
+
+  it('fetchUserBadges falls back to cache on error', async () => {
+    const cachedBadges = [{ id: 'b1', name: 'Cached Badge', earned: true }];
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(cachedBadges));
+
+    mockSupabase.from.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockResolvedValue({
+          data: null,
+          error: { message: 'network error' },
+        }),
+      }),
+    } as any);
+
+    const result = await fetchUserBadges('user-123');
+
+    expect(result).toEqual(cachedBadges);
+  });
+
+  it('fetchLeaderboard falls back to cache on error', async () => {
+    const cachedEntries = [{ rank: 1, user: { id: 'u1' }, best_score: 200, total_scans: 5 }];
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(cachedEntries));
+
+    const limitMock = jest.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'network error' },
+    });
+
+    mockSupabase.from.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        order: jest.fn().mockReturnValue({
+          limit: limitMock,
+        }),
+      }),
+    } as any);
+
+    const result = await fetchLeaderboard();
+
+    expect(result).toEqual(cachedEntries);
   });
 });
