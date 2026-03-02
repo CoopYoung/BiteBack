@@ -108,6 +108,24 @@ describe('fetchLeaderboard', () => {
     expect(gteMock).toHaveBeenCalledWith('updated_at', expect.any(String));
   });
 
+  it('applies city filter', async () => {
+    const eqMock = jest.fn().mockResolvedValue({ data: [], error: null });
+
+    mockSupabase.from.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        order: jest.fn().mockReturnValue({
+          limit: jest.fn().mockReturnValue({
+            eq: eqMock,
+          }),
+        }),
+      }),
+    } as any);
+
+    await fetchLeaderboard('alltime', 50, 'NYC');
+
+    expect(eqMock).toHaveBeenCalledWith('city', 'NYC');
+  });
+
   it('throws on error', async () => {
     const limitMock = jest.fn().mockResolvedValue({
       data: null,

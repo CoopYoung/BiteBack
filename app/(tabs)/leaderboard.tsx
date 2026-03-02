@@ -14,12 +14,16 @@ import { LeaderboardEntry } from '@/types';
 import { COLORS, THEME } from '@/constants/colors';
 import { Trophy, Medal } from 'lucide-react-native';
 
+type FilterType = 'weekly' | 'alltime' | 'city';
+
 export default function LeaderboardScreen() {
   const { user } = useAuth();
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'weekly' | 'alltime'>('alltime');
+  const [filter, setFilter] = useState<FilterType>('alltime');
+
+  const hasCity = !!user?.city;
 
   useEffect(() => {
     loadLeaderboard();
@@ -29,7 +33,9 @@ export default function LeaderboardScreen() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchLeaderboard(filter);
+      const apiFilter = filter === 'city' ? 'alltime' : filter;
+      const city = filter === 'city' ? user?.city : undefined;
+      const data = await fetchLeaderboard(apiFilter, 50, city);
       setEntries(data);
     } catch (err) {
       setError('Failed to load leaderboard');
@@ -96,7 +102,9 @@ export default function LeaderboardScreen() {
     }
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyText}>No leaderboard data yet</Text>
+        <Text style={styles.emptyText}>
+          {filter === 'city' ? 'No users in your city yet' : 'No leaderboard data yet'}
+        </Text>
       </View>
     );
   };
@@ -132,6 +140,21 @@ export default function LeaderboardScreen() {
               All Time
             </Text>
           </TouchableOpacity>
+          {hasCity && (
+            <TouchableOpacity
+              style={[styles.filterButton, filter === 'city' && styles.filterActive]}
+              onPress={() => setFilter('city')}
+            >
+              <Text
+                style={[
+                  styles.filterText,
+                  filter === 'city' && styles.filterTextActive,
+                ]}
+              >
+                My City
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 

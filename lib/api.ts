@@ -33,7 +33,8 @@ export async function fetchRecentReceipts(
  */
 export async function fetchLeaderboard(
   filter: 'weekly' | 'alltime' = 'alltime',
-  limit: number = 50
+  limit: number = 50,
+  city?: string
 ): Promise<LeaderboardEntry[]> {
   try {
     let query = supabase
@@ -46,6 +47,10 @@ export async function fetchLeaderboard(
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
       query = query.gte('updated_at', weekAgo.toISOString());
+    }
+
+    if (city) {
+      query = query.eq('city', city);
     }
 
     const { data, error } = await query;
