@@ -157,6 +157,50 @@ export async function saveReceipt(
   }
 }
 
+/**
+ * Update a user's profile fields (display_name, city).
+ */
+export async function updateUserProfile(
+  userId: string,
+  updates: { display_name?: string; city?: string }
+): Promise<User> {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .update(updates)
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as User;
+  } catch (error) {
+    throw new Error(
+      `Failed to update profile: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+/**
+ * Fetch a single receipt by ID.
+ */
+export async function fetchReceipt(receiptId: string): Promise<Receipt> {
+  try {
+    const { data, error } = await supabase
+      .from('receipts')
+      .select('*')
+      .eq('id', receiptId)
+      .single();
+
+    if (error) throw error;
+    return data as Receipt;
+  } catch (error) {
+    throw new Error(
+      `Failed to fetch receipt: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
 // ── Nutrition Functions ────────────────────────────────────────────
 
 interface NutritionData {

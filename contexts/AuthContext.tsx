@@ -9,6 +9,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, username: string) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -150,6 +151,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshUser = async () => {
+    if (!user?.id) return;
+    const profile = await fetchOrCreateProfile({ id: user.id, email: undefined });
+    if (profile) setUser(profile);
+  };
+
   const signOut = async () => {
     setIsLoading(true);
     try {
@@ -162,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, isSignedIn: !!user, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, isLoading, isSignedIn: !!user, signUp, signIn, signOut, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

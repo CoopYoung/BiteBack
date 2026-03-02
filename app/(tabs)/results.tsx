@@ -10,6 +10,7 @@ import {
   Image,
   TextInput,
   Alert,
+  Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
@@ -67,6 +68,18 @@ export default function ResultsScreen() {
       Alert.alert('Error', 'Failed to save receipt');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleShare = async () => {
+    const label = getScoreLabel(valueScore);
+    const name = restaurantName.trim() || 'a restaurant';
+    try {
+      await Share.share({
+        message: `I scored ${valueScore.toFixed(0)} cal/$ (${label}) at ${name} on Bite Back!`,
+      });
+    } catch (err) {
+      // User cancelled — no action needed
     }
   };
 
@@ -191,7 +204,8 @@ export default function ResultsScreen() {
 
           <TouchableOpacity
             style={[styles.button, styles.shareButton]}
-            disabled={isLoading}
+            disabled={isLoading || !hasInput}
+            onPress={handleShare}
           >
             <Share2 size={20} color={COLORS.primary} />
             <Text style={[styles.buttonText, styles.shareButtonText]}>Share</Text>

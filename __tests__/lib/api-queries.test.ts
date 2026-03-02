@@ -5,6 +5,8 @@ import {
   fetchLeaderboard,
   fetchUserBadges,
   saveReceipt,
+  updateUserProfile,
+  fetchReceipt,
 } from '@/lib/api';
 
 beforeEach(() => {
@@ -218,6 +220,44 @@ describe('saveReceipt', () => {
     expect(result.restaurant_name).toBe('McDonalds');
   });
 
+  it('throws when user stats update fails', async () => {
+    let callCount = 0;
+    mockSupabase.from.mockImplementation((table: string) => {
+      callCount++;
+      if (table === 'receipts') {
+        return {
+          update: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              select: jest.fn().mockReturnValue({
+                single: jest.fn().mockResolvedValue({
+                  data: { id: 'r1', restaurant_name: 'Test' },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        } as any;
+      }
+      // users table — fail
+      return {
+        update: jest.fn().mockReturnValue({
+          eq: jest.fn().mockResolvedValue({ error: { message: 'user update failed' } }),
+        }),
+      } as any;
+    });
+
+    await expect(
+      saveReceipt('r1', 'user-123', {
+        restaurantName: 'Test',
+        subtotal: 0,
+        total: 10,
+        totalCalories: 500,
+        currentTotalScans: 0,
+        currentBestScore: 0,
+      })
+    ).rejects.toThrow('Failed to save receipt');
+  });
+
   it('throws when receipt update fails', async () => {
     mockSupabase.from.mockReturnValue({
       update: jest.fn().mockReturnValue({
@@ -242,5 +282,85 @@ describe('saveReceipt', () => {
         currentBestScore: 0,
       })
     ).rejects.toThrow('Failed to save receipt');
+  });
+});
+
+describe('updateUserProfile', () => {
+  it('updates display_name and city', async () => {
+    const mockUser = { id: 'u1', display_name: 'New Name', city: 'NYC' };
+
+    mockSupabase.from.mockReturnValue({
+      update: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            single: jest.fn().mockResolvedValue({
+              data: mockUser,
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    } as any);
+
+    const result = await updateUserProfile('u1', { display_name: 'New Name', city: 'NYC' });
+
+    expect(result.display_name).toBe('New Name');
+    expect(mockSupabase.from).toHaveBeenCalledWith('users');
+  });
+
+  it('throws on error', async () => {
+    mockSupabase.from.mockReturnValue({
+      update: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            single: jest.fn().mockResolvedValue({
+              data: null,
+              error: { message: 'forbidden' },
+            }),
+          }),
+        }),
+      }),
+    } as any);
+
+    await expect(
+      updateUserProfile('u1', { display_name: 'Test' })
+    ).rejects.toThrow('Failed to update profile');
+  });
+});
+
+describe('fetchReceipt', () => {
+  it('returns a single receipt', async () => {
+    const mockReceipt = { id: 'r1', restaurant_name: 'McDonalds', total: 12 };
+
+    mockSupabase.from.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          single: jest.fn().mockResolvedValue({
+            data: mockReceipt,
+            error: null,
+          }),
+        }),
+      }),
+    } as any);
+
+    const result = await fetchReceipt('r1');
+
+    expect(result.restaurant_name).toBe('McDonalds');
+    expect(mockSupabase.from).toHaveBeenCalledWith('receipts');
+  });
+
+  it('throws on error', async () => {
+    mockSupabase.from.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          single: jest.fn().mockResolvedValue({
+            data: null,
+            error: { message: 'not found' },
+          }),
+        }),
+      }),
+    } as any);
+
+    await expect(fetchReceipt('bad-id')).rejects.toThrow('Failed to fetch receipt');
   });
 });

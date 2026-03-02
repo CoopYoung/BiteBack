@@ -1,31 +1,41 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   SafeAreaView,
   ActivityIndicator,
   Alert,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { fetchUserBadges } from '@/lib/api';
+import { fetchUserBadges, updateUserProfile } from '@/lib/api';
 import { Badge } from '@/types';
 import { COLORS, THEME } from '@/constants/colors';
-import { LogOut, Settings } from 'lucide-react-native';
+import { LogOut, Settings, Check, X } from 'lucide-react-native';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, signOut } = useAuth();
+  const { user, signOut, refreshUser } = useAuth();
   const [badges, setBadges] = useState<Badge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(user?.display_name ?? '');
+  const [editCity, setEditCity] = useState(user?.city ?? '');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     loadBadges();
   }, [user?.id]);
+
+  useEffect(() => {
+    setEditName(user?.display_name ?? '');
+    setEditCity(user?.city ?? '');
+  }, [user?.display_name, user?.city]);
 
   const loadBadges = async () => {
     if (!user?.id) return;
@@ -59,90 +69,191 @@ export default function ProfileScreen() {
     ]);
   };
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user?.display_name?.charAt(0).toUpperCase() || 'U'}
-            </Text>
-          </View>
-          <Text style={styles.username}>{user?.display_name || 'User'}</Text>
-          <Text style={styles.email}>@{user?.username || 'username'}</Text>
-        </View>
+  const handleEditToggle = () => {
+    if (isEditing) {
+      // Cancel — reset fields
+      setEditName(user?.display_name ?? '');
+      setEditCity(user?.city ?? '');
+    }
+    setIsEditing(!isEditing);
+  };
 
-        <View style={styles.statsGrid}>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{user?.total_scans || 0}</Text>
-            <Text style={styles.statName}>Scans</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{(user?.best_value_score || 0).toFixed(0)}</Text>
-            <Text style={styles.statName}>Best Score</Text>
-          </View>
-          <View style={styles.statBox}>
-            <Text style={styles.statNumber}>{badges.filter((b) => b.earned).length}</Text>
-            <Text style={styles.statName}>Badges</Text>
-          </View>
-        </View>
+  const handleSaveProfile = async () => {
+    if (!user?.id) return;
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      Alert.alert('Error', 'Display name cannot be empty');
+      return;
+    }
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Achievements</Text>
-          {isLoading ? (
-            <ActivityIndicator size="large" color={COLORS.primary} />
-          ) : error ? (
-            <View style={styles.errorState}>
-              <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity onPress={loadBadges} style={styles.retryButton}>
-                <Text style={styles.retryText}>Retry</Text>
+    setIsSaving(true);
+    try {
+      await updateUserProfile(user.id, {
+        display_name: trimmedName,
+        city: editCity.trim() || undefined,
+      });
+      await refreshUser();
+      setIsEditing(false);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to update profile');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const renderBadgeItem = useCallback(
+    ({ item }: { item: Badge }) => (
+      <View
+        style={[
+          styles.badgeItem,
+          !item.earned && styles.badgeItemLocked,
+        ]}
+      >
+        <View
+          style={[
+            styles.badgeIcon,
+            !item.earned && styles.badgeIconLocked,
+          ]}
+        >
+          <Text style={styles.badgeEmoji}>
+            {item.icon_url || '\uD83C\uDF96\uFE0F'}
+          </Text>
+        </View>
+        <Text style={styles.badgeName}>{item.name}</Text>
+        {!item.earned && (
+          <Text style={styles.locked}>Locked</Text>
+        )}
+      </View>
+    ),
+    []
+  );
+
+  const badgeKeyExtractor = useCallback((item: Badge) => item.id, []);
+
+  const renderHeader = () => (
+    <>
+      <View style={styles.header}>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {user?.display_name?.charAt(0).toUpperCase() || 'U'}
+          </Text>
+        </View>
+        {isEditing ? (
+          <View style={styles.editForm}>
+            <TextInput
+              style={styles.editInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Display name"
+              placeholderTextColor={COLORS.gray400}
+              editable={!isSaving}
+            />
+            <TextInput
+              style={styles.editInput}
+              value={editCity}
+              onChangeText={setEditCity}
+              placeholder="City (optional)"
+              placeholderTextColor={COLORS.gray400}
+              editable={!isSaving}
+            />
+            <View style={styles.editActions}>
+              <TouchableOpacity
+                style={styles.editSaveButton}
+                onPress={handleSaveProfile}
+                disabled={isSaving}
+              >
+                {isSaving ? (
+                  <ActivityIndicator size="small" color={COLORS.dark} />
+                ) : (
+                  <>
+                    <Check size={16} color={COLORS.dark} />
+                    <Text style={styles.editSaveText}>Save</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.editCancelButton}
+                onPress={handleEditToggle}
+                disabled={isSaving}
+              >
+                <X size={16} color={COLORS.gray400} />
+                <Text style={styles.editCancelText}>Cancel</Text>
               </TouchableOpacity>
             </View>
-          ) : badges.length > 0 ? (
-            <View style={styles.badgesGrid}>
-              {badges.map((badge) => (
-                <View
-                  key={badge.id}
-                  style={[
-                    styles.badgeItem,
-                    !badge.earned && styles.badgeItemLocked,
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.badgeIcon,
-                      !badge.earned && styles.badgeIconLocked,
-                    ]}
-                  >
-                    <Text style={styles.badgeEmoji}>
-                      {badge.icon_url || '\uD83C\uDF96\uFE0F'}
-                    </Text>
-                  </View>
-                  <Text style={styles.badgeName}>{badge.name}</Text>
-                  {!badge.earned && (
-                    <Text style={styles.locked}>Locked</Text>
-                  )}
-                </View>
-              ))}
-            </View>
-          ) : null}
+          </View>
+        ) : (
+          <>
+            <Text style={styles.username}>{user?.display_name || 'User'}</Text>
+            <Text style={styles.email}>@{user?.username || 'username'}</Text>
+            {user?.city ? (
+              <Text style={styles.cityText}>{user.city}</Text>
+            ) : null}
+          </>
+        )}
+      </View>
+
+      <View style={styles.statsGrid}>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{user?.total_scans || 0}</Text>
+          <Text style={styles.statName}>Scans</Text>
         </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{(user?.best_value_score || 0).toFixed(0)}</Text>
+          <Text style={styles.statName}>Best Score</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statNumber}>{badges.filter((b) => b.earned).length}</Text>
+          <Text style={styles.statName}>Badges</Text>
+        </View>
+      </View>
 
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.settingsButton}>
-            <Settings size={20} color={COLORS.primary} />
-            <Text style={styles.settingsText}>Settings</Text>
-          </TouchableOpacity>
+      <Text style={styles.sectionTitle}>Achievements</Text>
 
-          <TouchableOpacity
-            style={[styles.settingsButton, styles.signOutButton]}
-            onPress={handleSignOut}
-          >
-            <LogOut size={20} color={COLORS.danger} />
-            <Text style={[styles.settingsText, styles.signOutText]}>Sign Out</Text>
+      {isLoading ? (
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      ) : error ? (
+        <View style={styles.errorState}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity onPress={loadBadges} style={styles.retryButton}>
+            <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
+      ) : null}
+    </>
+  );
+
+  const renderFooter = () => (
+    <View style={styles.footerSection}>
+      <TouchableOpacity style={styles.settingsButton} onPress={handleEditToggle}>
+        <Settings size={20} color={COLORS.primary} />
+        <Text style={styles.settingsText}>Edit Profile</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[styles.settingsButton, styles.signOutButton]}
+        onPress={handleSignOut}
+      >
+        <LogOut size={20} color={COLORS.danger} />
+        <Text style={[styles.settingsText, styles.signOutText]}>Sign Out</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  // Only show badges in FlatList data when loaded and no error
+  const badgeData = !isLoading && !error ? badges : [];
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <FlatList
+        data={badgeData}
+        renderItem={renderBadgeItem}
+        keyExtractor={badgeKeyExtractor}
+        numColumns={3}
+        ListHeaderComponent={renderHeader}
+        ListFooterComponent={renderFooter}
+        contentContainerStyle={styles.content}
+        columnWrapperStyle={badgeData.length > 0 ? styles.badgesRow : undefined}
+      />
     </SafeAreaView>
   );
 }
@@ -151,9 +262,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.dark,
-  },
-  scroll: {
-    flex: 1,
   },
   content: {
     paddingHorizontal: THEME.spacing.md,
@@ -187,6 +295,61 @@ const styles = StyleSheet.create({
     color: COLORS.gray400,
     marginTop: THEME.spacing.xs,
   },
+  cityText: {
+    fontSize: THEME.fonts.sm,
+    color: COLORS.gray500,
+    marginTop: THEME.spacing.xs,
+  },
+  editForm: {
+    width: '100%',
+    gap: THEME.spacing.sm,
+  },
+  editInput: {
+    backgroundColor: COLORS.gray800,
+    borderWidth: 1,
+    borderColor: COLORS.gray700,
+    borderRadius: THEME.borderRadius.md,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
+    color: COLORS.white,
+    fontSize: THEME.fonts.base,
+    textAlign: 'center',
+  },
+  editActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: THEME.spacing.md,
+    marginTop: THEME.spacing.sm,
+  },
+  editSaveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
+    borderRadius: THEME.borderRadius.md,
+    gap: THEME.spacing.xs,
+  },
+  editSaveText: {
+    color: COLORS.dark,
+    fontWeight: '600',
+    fontSize: THEME.fonts.sm,
+  },
+  editCancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.gray700,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
+    borderRadius: THEME.borderRadius.md,
+    gap: THEME.spacing.xs,
+  },
+  editCancelText: {
+    color: COLORS.gray400,
+    fontWeight: '600',
+    fontSize: THEME.fonts.sm,
+  },
   statsGrid: {
     flexDirection: 'row',
     gap: THEME.spacing.md,
@@ -209,22 +372,19 @@ const styles = StyleSheet.create({
     color: COLORS.gray400,
     marginTop: THEME.spacing.xs,
   },
-  section: {
-    marginBottom: THEME.spacing.xl,
-  },
   sectionTitle: {
     fontSize: THEME.fonts.lg,
     fontWeight: '600',
     color: COLORS.white,
     marginBottom: THEME.spacing.md,
   },
-  badgesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: THEME.spacing.md,
+  badgesRow: {
+    gap: THEME.spacing.sm,
+    marginBottom: THEME.spacing.sm,
   },
   badgeItem: {
-    width: '30%',
+    flex: 1,
+    maxWidth: '33%',
     backgroundColor: COLORS.gray800,
     paddingVertical: THEME.spacing.md,
     paddingHorizontal: THEME.spacing.sm,
@@ -279,6 +439,9 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontSize: THEME.fonts.sm,
     fontWeight: '600',
+  },
+  footerSection: {
+    marginTop: THEME.spacing.xl,
   },
   settingsButton: {
     flexDirection: 'row',
