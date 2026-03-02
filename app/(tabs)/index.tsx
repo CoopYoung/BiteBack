@@ -42,9 +42,20 @@ export default function HomeScreen() {
     }
   };
 
+  const handleReceiptPress = useCallback(
+    (receiptId: string) => {
+      router.push({ pathname: '/(tabs)/results', params: { receiptId } });
+    },
+    [router]
+  );
+
   const renderReceiptItem = useCallback(
     ({ item }: { item: Receipt }) => (
-      <View style={styles.receiptCard}>
+      <TouchableOpacity
+        style={styles.receiptCard}
+        onPress={() => handleReceiptPress(item.id)}
+        activeOpacity={0.7}
+      >
         <View style={styles.receiptHeader}>
           <Text style={styles.restaurantName}>{item.restaurant_name}</Text>
           <Text
@@ -62,9 +73,9 @@ export default function HomeScreen() {
           </Text>
           <Text style={styles.date}>{formatDate(item.created_at)}</Text>
         </View>
-      </View>
+      </TouchableOpacity>
     ),
-    []
+    [handleReceiptPress]
   );
 
   const keyExtractor = useCallback((item: Receipt) => item.id, []);
