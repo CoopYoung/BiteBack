@@ -9,43 +9,39 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   default: { getItem: jest.fn(), setItem: jest.fn(), removeItem: jest.fn() },
 }));
 
-// Mock supabase before importing AuthContext
-const mockGetSession = jest.fn().mockResolvedValue({
-  data: { session: null },
-  error: null,
-});
-const mockOnAuthStateChange = jest.fn().mockReturnValue({
-  data: { subscription: { unsubscribe: jest.fn() } },
-});
-const mockSignUp = jest.fn();
-const mockSignInWithPassword = jest.fn();
-const mockSignOut = jest.fn().mockResolvedValue({ error: null });
-const mockFrom = jest.fn().mockReturnValue({
-  select: jest.fn().mockReturnValue({
-    eq: jest.fn().mockReturnValue({
-      maybeSingle: jest.fn().mockResolvedValue({ data: null }),
-    }),
-  }),
-  insert: jest.fn().mockResolvedValue({ error: null }),
-});
-
-jest.mock('@/lib/supabase', () => ({
-  supabase: {
-    auth: {
-      getSession: mockGetSession,
-      onAuthStateChange: mockOnAuthStateChange,
-      signUp: mockSignUp,
-      signInWithPassword: mockSignInWithPassword,
-      signOut: mockSignOut,
-    },
-    from: mockFrom,
-  },
-}));
-
 // Set env var so auth init doesn't skip
 process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
 
+// Mock supabase — define mock object inside factory to avoid hoisting issues
+jest.mock('@/lib/supabase', () => {
+  const mockAuth = {
+    getSession: jest.fn().mockResolvedValue({ data: { session: null }, error: null }),
+    onAuthStateChange: jest.fn().mockReturnValue({
+      data: { subscription: { unsubscribe: jest.fn() } },
+    }),
+    signUp: jest.fn(),
+    signInWithPassword: jest.fn(),
+    signOut: jest.fn().mockResolvedValue({ error: null }),
+  };
+  const mockFrom = jest.fn().mockReturnValue({
+    select: jest.fn().mockReturnValue({
+      eq: jest.fn().mockReturnValue({
+        maybeSingle: jest.fn().mockResolvedValue({ data: null }),
+      }),
+    }),
+    insert: jest.fn().mockResolvedValue({ error: null }),
+  });
+  return {
+    supabase: { auth: mockAuth, from: mockFrom },
+  };
+});
+
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+
+// Get typed references to the mocked functions
+const mockAuth = supabase.auth as jest.Mocked<typeof supabase.auth>;
+const mockFrom = supabase.from as jest.Mock;
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <AuthProvider>{children}</AuthProvider>
@@ -54,11 +50,22 @@ const wrapper = ({ children }: { children: React.ReactNode }) => (
 describe('AuthContext', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetSession.mockResolvedValue({ data: { session: null }, error: null });
-    mockOnAuthStateChange.mockReturnValue({
+    (mockAuth.getSession as jest.Mock).mockResolvedValue({
+      data: { session: null },
+      error: null,
+    });
+    (mockAuth.onAuthStateChange as jest.Mock).mockReturnValue({
       data: { subscription: { unsubscribe: jest.fn() } },
     });
-    mockSignOut.mockResolvedValue({ error: null });
+    (mockAuth.signOut as jest.Mock).mockResolvedValue({ error: null });
+    mockFrom.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnValue({
+          maybeSingle: jest.fn().mockResolvedValue({ data: null }),
+        }),
+      }),
+      insert: jest.fn().mockResolvedValue({ error: null }),
+    });
   });
 
   it('starts loading then resolves to signed out', async () => {
@@ -93,12 +100,12 @@ describe('AuthContext', () => {
       await result.current.signOut();
     });
 
-    expect(mockSignOut).toHaveBeenCalledTimes(1);
+    expect(mockAuth.signOut).toHaveBeenCalledTimes(1);
     expect(result.current.user).toBeNull();
   });
 
   it('signIn calls signInWithPassword', async () => {
-    mockSignInWithPassword.mockResolvedValue({
+    (mockAuth.signInWithPassword as jest.Mock).mockResolvedValue({
       data: { user: { id: 'u1' }, session: {} },
       error: null,
     });
@@ -122,7 +129,7 @@ describe('AuthContext', () => {
       await result.current.signIn('test@test.com', 'password123');
     });
 
-    expect(mockSignInWithPassword).toHaveBeenCalledWith({
+    expect(mockAuth.signInWithPassword).toHaveBeenCalledWith({
       email: 'test@test.com',
       password: 'password123',
     });

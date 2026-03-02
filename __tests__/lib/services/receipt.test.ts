@@ -1,5 +1,5 @@
-import '../__mocks__/supabase-module-mock';
-import { mockSupabase, resetSupabaseMocks } from '../__mocks__/supabase';
+import '../../__mocks__/supabase-module-mock';
+import { mockSupabase, resetSupabaseMocks } from '../../__mocks__/supabase';
 import {
   createDraftReceipt,
   finalizeReceipt,

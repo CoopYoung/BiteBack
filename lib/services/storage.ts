@@ -18,7 +18,7 @@ export async function uploadReceiptImage(
 
   // Read file as base64
   const base64 = await FileSystem.readAsStringAsync(localUri, {
-    encoding: FileSystem.EncodingType.Base64,
+    encoding: 'base64',
   });
 
   const { error } = await supabase.storage
