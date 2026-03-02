@@ -17,6 +17,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  /**
+   * Fetch the public users row for an auth user.
+   * If no row exists yet, auto-create one so the user isn't stuck.
+   */
+  const fetchOrCreateProfile = async (authUser: {
+    id: string;
+    email?: string;
+  }): Promise<User | null> => {
+    const { data: existing } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    if (existing) return existing as User;
+
+    // No public profile yet — create one from auth data
+    const username = authUser.email?.split('@')[0] ?? 'user';
+    const { error: insertError } = await supabase.from('users').insert({
+      id: authUser.id,
+      username,
+      display_name: username,
+    });
+
+    if (insertError) {
+      console.error('Failed to create user profile:', insertError.message);
+      return null;
+    }
+
+    const { data: created } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', authUser.id)
+      .maybeSingle();
+
+    return (created as User) ?? null;
+  };
+
   useEffect(() => {
     const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
     if (!supabaseUrl) {
@@ -31,15 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) throw error;
 
         if (data.session?.user) {
-          const { data: userData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', data.session.user.id)
-            .maybeSingle();
-
-          if (userData) {
-            setUser(userData as User);
-          }
+          const profile = await fetchOrCreateProfile(data.session.user);
+          if (profile) setUser(profile);
         }
       } catch (error) {
         console.error('Auth session error:', error);
@@ -52,15 +83,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (event, session) => {
         (async () => {
           if (session?.user) {
-            const { data: userData } = await supabase
-              .from('users')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
-
-            if (userData) {
-              setUser(userData as User);
-            }
+            const profile = await fetchOrCreateProfile(session.user);
+            if (profile) setUser(profile);
           } else {
             setUser(null);
           }
@@ -84,6 +108,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (authError) throw authError;
       if (!authData.user) throw new Error('No user returned');
 
+      // Create user profile row with chosen username
       const { error: userError } = await supabase.from('users').insert({
         id: authData.user.id,
         username,
@@ -92,14 +117,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (userError) throw userError;
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authData.user.id)
-        .maybeSingle();
-
-      if (userData) {
-        setUser(userData as User);
+      const profile = await fetchOrCreateProfile(authData.user);
+      if (profile) {
+        setUser(profile);
+      } else {
+        throw new Error('Failed to load user profile after sign up');
       }
     } finally {
       setIsLoading(false);
@@ -117,14 +139,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
       if (!data.user) throw new Error('No user returned');
 
-      const { data: userData } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', data.user.id)
-        .maybeSingle();
-
-      if (userData) {
-        setUser(userData as User);
+      const profile = await fetchOrCreateProfile(data.user);
+      if (profile) {
+        setUser(profile);
+      } else {
+        throw new Error('Failed to load user profile');
       }
     } finally {
       setIsLoading(false);
