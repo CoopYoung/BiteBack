@@ -4,6 +4,7 @@ export interface User {
   display_name: string;
   avatar_url?: string;
   bio?: string;
+  city?: string;
   total_scans: number;
   best_value_score: number;
   leaderboard_rank?: number;

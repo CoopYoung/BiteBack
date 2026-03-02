@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,28 +10,60 @@ import {
   Image,
   TextInput,
   Alert,
+  Share,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { saveReceipt } from '@/lib/api';
-import { calculateValueScore, getScoreColor, getScoreLabel } from '@/lib/utils';
+import { saveReceipt, fetchReceipt } from '@/lib/api';
+import { calculateValueScore, getScoreColor, getScoreLabel, formatCurrency } from '@/lib/utils';
+import { Receipt } from '@/types';
 import { COLORS, THEME } from '@/constants/colors';
-import { Check, X, Share2 } from 'lucide-react-native';
+import { Check, X, Share2, ArrowLeft } from 'lucide-react-native';
 
 export default function ResultsScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { receiptId, imageUri } = useLocalSearchParams();
+
+  // View-only mode: navigated from dashboard with just receiptId, no imageUri
+  const isViewMode = !!receiptId && !imageUri;
+
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [isLoadingReceipt, setIsLoadingReceipt] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [restaurantName, setRestaurantName] = useState('');
   const [subtotal, setSubtotal] = useState('');
   const [total, setTotal] = useState('');
   const [calories, setCalories] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const valueScore = calculateValueScore(
+  useEffect(() => {
+    if (isViewMode && receiptId) {
+      loadReceipt(receiptId as string);
+    }
+  }, [isViewMode, receiptId]);
+
+  const loadReceipt = async (id: string) => {
+    setIsLoadingReceipt(true);
+    setLoadError(null);
+    try {
+      const data = await fetchReceipt(id);
+      setReceipt(data);
+    } catch (err) {
+      setLoadError('Failed to load receipt');
+    } finally {
+      setIsLoadingReceipt(false);
+    }
+  };
+
+  // In view mode, use the fetched receipt's score; in edit mode, compute live
+  const viewScore = receipt?.calories_per_dollar ?? 0;
+  const editScore = calculateValueScore(
     parseInt(calories) || 0,
     parseFloat(total) || 0
   );
+  const valueScore = isViewMode ? viewScore : editScore;
 
   const handleSave = async () => {
     if (!restaurantName.trim() || !total || !calories) {
@@ -70,20 +102,70 @@ export default function ResultsScreen() {
     }
   };
 
-  const hasInput = parseFloat(total) > 0 && parseInt(calories) > 0;
+  const handleShare = async () => {
+    const label = getScoreLabel(valueScore);
+    const name = isViewMode
+      ? receipt?.restaurant_name ?? 'a restaurant'
+      : restaurantName.trim() || 'a restaurant';
+    try {
+      await Share.share({
+        message: `I scored ${valueScore.toFixed(0)} cal/$ (${label}) at ${name} on Bite Back!`,
+      });
+    } catch (err) {
+      // User cancelled — no action needed
+    }
+  };
+
+  const hasInput = isViewMode
+    ? valueScore > 0
+    : parseFloat(total) > 0 && parseInt(calories) > 0;
+
+  // Loading state for view mode
+  if (isViewMode && isLoadingReceipt) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ActivityIndicator size="large" color={COLORS.primary} style={styles.centerLoader} />
+      </SafeAreaView>
+    );
+  }
+
+  if (isViewMode && loadError) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centerState}>
+          <Text style={styles.errorText}>{loadError}</Text>
+          <TouchableOpacity
+            onPress={() => loadReceipt(receiptId as string)}
+            style={styles.retryButton}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backLink}>
+            <Text style={styles.backLinkText}>Go back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()}>
-            <X size={24} color={COLORS.white} />
+            {isViewMode ? (
+              <ArrowLeft size={24} color={COLORS.white} />
+            ) : (
+              <X size={24} color={COLORS.white} />
+            )}
           </TouchableOpacity>
-          <Text style={styles.title}>Receipt Details</Text>
+          <Text style={styles.title}>
+            {isViewMode ? receipt?.restaurant_name ?? 'Receipt' : 'Receipt Details'}
+          </Text>
           <View style={styles.headerSpacer} />
         </View>
 
-        {imageUri && (
+        {!isViewMode && imageUri && (
           <Image
             source={{ uri: imageUri as string }}
             style={styles.receiptImage}
@@ -91,59 +173,78 @@ export default function ResultsScreen() {
           />
         )}
 
-        <View style={styles.form}>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Restaurant Name *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., McDonald's"
-              placeholderTextColor={COLORS.gray400}
-              value={restaurantName}
-              onChangeText={setRestaurantName}
-              editable={!isLoading}
-            />
+        {isViewMode && receipt ? (
+          // Read-only view of receipt data
+          <View style={styles.viewSection}>
+            <View style={styles.viewRow}>
+              <Text style={styles.viewLabel}>Restaurant</Text>
+              <Text style={styles.viewValue}>{receipt.restaurant_name}</Text>
+            </View>
+            <View style={styles.viewRow}>
+              <Text style={styles.viewLabel}>Total</Text>
+              <Text style={styles.viewValue}>{formatCurrency(receipt.total)}</Text>
+            </View>
+            <View style={styles.viewRow}>
+              <Text style={styles.viewLabel}>Calories</Text>
+              <Text style={styles.viewValue}>{receipt.total_calories} cal</Text>
+            </View>
           </View>
-
-          <View style={styles.formRow}>
-            <View style={[styles.formGroup, styles.formGroupHalf]}>
-              <Text style={styles.label}>Subtotal *</Text>
+        ) : (
+          // Edit form for new receipts
+          <View style={styles.form}>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Restaurant Name *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="0.00"
+                placeholder="e.g., McDonald's"
                 placeholderTextColor={COLORS.gray400}
-                value={subtotal}
-                onChangeText={setSubtotal}
-                keyboardType="decimal-pad"
+                value={restaurantName}
+                onChangeText={setRestaurantName}
                 editable={!isLoading}
               />
             </View>
-            <View style={[styles.formGroup, styles.formGroupHalf]}>
-              <Text style={styles.label}>Total *</Text>
+
+            <View style={styles.formRow}>
+              <View style={[styles.formGroup, styles.formGroupHalf]}>
+                <Text style={styles.label}>Subtotal *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0.00"
+                  placeholderTextColor={COLORS.gray400}
+                  value={subtotal}
+                  onChangeText={setSubtotal}
+                  keyboardType="decimal-pad"
+                  editable={!isLoading}
+                />
+              </View>
+              <View style={[styles.formGroup, styles.formGroupHalf]}>
+                <Text style={styles.label}>Total *</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="0.00"
+                  placeholderTextColor={COLORS.gray400}
+                  value={total}
+                  onChangeText={setTotal}
+                  keyboardType="decimal-pad"
+                  editable={!isLoading}
+                />
+              </View>
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Total Calories *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="0.00"
+                placeholder="0"
                 placeholderTextColor={COLORS.gray400}
-                value={total}
-                onChangeText={setTotal}
-                keyboardType="decimal-pad"
+                value={calories}
+                onChangeText={setCalories}
+                keyboardType="number-pad"
                 editable={!isLoading}
               />
             </View>
           </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Total Calories *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="0"
-              placeholderTextColor={COLORS.gray400}
-              value={calories}
-              onChangeText={setCalories}
-              keyboardType="number-pad"
-              editable={!isLoading}
-            />
-          </View>
-        </View>
+        )}
 
         {hasInput && (
           <View style={styles.preview}>
@@ -162,7 +263,7 @@ export default function ResultsScreen() {
               <View style={styles.scoreDescription}>
                 <View
                   style={[
-                    styles.badge,
+                    styles.scoreBadge,
                     { backgroundColor: getScoreColor(valueScore) },
                   ]}
                 >
@@ -174,24 +275,27 @@ export default function ResultsScreen() {
         )}
 
         <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={[styles.button, styles.saveButton, isLoading && styles.buttonDisabled]}
-            onPress={handleSave}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator color={COLORS.dark} />
-            ) : (
-              <>
-                <Check size={20} color={COLORS.dark} />
-                <Text style={styles.buttonText}>Save Receipt</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          {!isViewMode && (
+            <TouchableOpacity
+              style={[styles.button, styles.saveButton, isLoading && styles.buttonDisabled]}
+              onPress={handleSave}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color={COLORS.dark} />
+              ) : (
+                <>
+                  <Check size={20} color={COLORS.dark} />
+                  <Text style={styles.buttonText}>Save Receipt</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[styles.button, styles.shareButton]}
-            disabled={isLoading}
+            disabled={isLoading || !hasInput}
+            onPress={handleShare}
           >
             <Share2 size={20} color={COLORS.primary} />
             <Text style={[styles.buttonText, styles.shareButtonText]}>Share</Text>
@@ -214,6 +318,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: THEME.spacing.md,
     paddingVertical: THEME.spacing.md,
   },
+  centerLoader: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  centerState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: THEME.spacing.lg,
+  },
+  errorText: {
+    color: COLORS.gray400,
+    fontSize: THEME.fonts.base,
+  },
+  retryButton: {
+    marginTop: THEME.spacing.md,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
+    borderRadius: THEME.borderRadius.md,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  retryText: {
+    color: COLORS.primary,
+    fontSize: THEME.fonts.sm,
+    fontWeight: '600',
+  },
+  backLink: {
+    marginTop: THEME.spacing.md,
+  },
+  backLinkText: {
+    color: COLORS.gray400,
+    fontSize: THEME.fonts.sm,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -224,6 +362,8 @@ const styles = StyleSheet.create({
     fontSize: THEME.fonts.xl,
     fontWeight: 'bold',
     color: COLORS.white,
+    flex: 1,
+    textAlign: 'center',
   },
   headerSpacer: {
     width: 24,
@@ -234,6 +374,27 @@ const styles = StyleSheet.create({
     borderRadius: THEME.borderRadius.lg,
     marginBottom: THEME.spacing.lg,
     backgroundColor: COLORS.gray800,
+  },
+  viewSection: {
+    backgroundColor: COLORS.gray800,
+    borderRadius: THEME.borderRadius.md,
+    padding: THEME.spacing.md,
+    marginBottom: THEME.spacing.lg,
+    gap: THEME.spacing.md,
+  },
+  viewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  viewLabel: {
+    fontSize: THEME.fonts.base,
+    color: COLORS.gray400,
+  },
+  viewValue: {
+    fontSize: THEME.fonts.base,
+    fontWeight: '600',
+    color: COLORS.white,
   },
   form: {
     marginBottom: THEME.spacing.lg,
@@ -293,7 +454,7 @@ const styles = StyleSheet.create({
   scoreDescription: {
     marginTop: THEME.spacing.md,
   },
-  badge: {
+  scoreBadge: {
     paddingHorizontal: THEME.spacing.md,
     paddingVertical: THEME.spacing.sm,
     borderRadius: THEME.borderRadius.full,
