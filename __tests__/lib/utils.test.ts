@@ -1,11 +1,16 @@
 import {
   calculateValueScore,
   getValueCategory,
+  getScoreColor,
+  getScoreLabel,
+  SCORE_EXCELLENT,
+  SCORE_FAIR_MIN,
   formatCurrency,
   formatDate,
   calculateMacroPercentages,
   fuzzyMatch,
 } from '@/lib/utils';
+import { COLORS } from '@/constants/colors';
 
 describe('calculateValueScore', () => {
   it('returns calories / dollar', () => {
@@ -74,6 +79,45 @@ describe('calculateMacroPercentages', () => {
       carbs: 0,
       fat: 0,
     });
+  });
+});
+
+describe('getScoreColor', () => {
+  it('returns excellent color for scores >= 150', () => {
+    expect(getScoreColor(150)).toBe(COLORS.excellent);
+    expect(getScoreColor(200)).toBe(COLORS.excellent);
+  });
+
+  it('returns good color for scores 50-149', () => {
+    expect(getScoreColor(50)).toBe(COLORS.good);
+    expect(getScoreColor(100)).toBe(COLORS.good);
+    expect(getScoreColor(149)).toBe(COLORS.good);
+  });
+
+  it('returns poor color for scores < 50', () => {
+    expect(getScoreColor(0)).toBe(COLORS.poor);
+    expect(getScoreColor(49)).toBe(COLORS.poor);
+  });
+});
+
+describe('getScoreLabel', () => {
+  it('returns Excellent Deal for >= 150', () => {
+    expect(getScoreLabel(150)).toBe('Excellent Deal');
+  });
+
+  it('returns Fair Value for 50-149', () => {
+    expect(getScoreLabel(75)).toBe('Fair Value');
+  });
+
+  it('returns Poor Value for < 50', () => {
+    expect(getScoreLabel(25)).toBe('Poor Value');
+  });
+});
+
+describe('score threshold constants', () => {
+  it('has correct threshold values', () => {
+    expect(SCORE_EXCELLENT).toBe(150);
+    expect(SCORE_FAIR_MIN).toBe(50);
   });
 });
 
