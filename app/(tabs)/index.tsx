@@ -1,16 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
   ActivityIndicator,
   SafeAreaView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { fetchRecentReceipts } from '@/lib/api';
+import { getScoreColor, formatCurrency, formatDate } from '@/lib/utils';
 import { Receipt } from '@/types';
 import { COLORS, THEME } from '@/constants/colors';
 import { Camera } from 'lucide-react-native';
@@ -20,104 +21,115 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchReceipts();
+    loadReceipts();
   }, [user?.id]);
 
-  const fetchReceipts = async () => {
+  const loadReceipts = async () => {
     if (!user?.id) return;
 
     setIsLoading(true);
+    setError(null);
     try {
-      const { data, error } = await supabase
-        .from('receipts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (error) throw error;
-      setReceipts(data || []);
-    } catch (error) {
-      console.error('Error fetching receipts:', error);
+      const data = await fetchRecentReceipts(user.id, 5);
+      setReceipts(data);
+    } catch (err) {
+      setError('Failed to load recent scans');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const getValueColor = (value?: number) => {
-    if (!value) return COLORS.gray500;
-    if (value >= 150) return COLORS.excellent;
-    if (value >= 50) return COLORS.good;
-    return COLORS.poor;
+  const renderReceiptItem = useCallback(
+    ({ item }: { item: Receipt }) => (
+      <View style={styles.receiptCard}>
+        <View style={styles.receiptHeader}>
+          <Text style={styles.restaurantName}>{item.restaurant_name}</Text>
+          <Text
+            style={[
+              styles.value,
+              { color: getScoreColor(item.calories_per_dollar ?? 0) },
+            ]}
+          >
+            {item.calories_per_dollar?.toFixed(0) || 0} cals/$
+          </Text>
+        </View>
+        <View style={styles.receiptFooter}>
+          <Text style={styles.stats}>
+            {item.total_calories} cal · {formatCurrency(item.total)}
+          </Text>
+          <Text style={styles.date}>{formatDate(item.created_at)}</Text>
+        </View>
+      </View>
+    ),
+    []
+  );
+
+  const keyExtractor = useCallback((item: Receipt) => item.id, []);
+
+  const renderListHeader = () => (
+    <>
+      <View style={styles.header}>
+        <Text style={styles.welcome}>Welcome back,</Text>
+        <Text style={styles.username}>{user?.display_name || 'Friend'}</Text>
+      </View>
+
+      <TouchableOpacity
+        style={styles.scanButton}
+        onPress={() => router.push('/(tabs)/scan')}
+      >
+        <Camera size={24} color={COLORS.dark} />
+        <Text style={styles.scanButtonText}>Start Scanning</Text>
+      </TouchableOpacity>
+
+      <View style={styles.statsContainer}>
+        <View style={styles.stat}>
+          <Text style={styles.statValue}>{user?.total_scans || 0}</Text>
+          <Text style={styles.statLabel}>Scans</Text>
+        </View>
+        <View style={styles.stat}>
+          <Text style={styles.statValue}>{(user?.best_value_score || 0).toFixed(0)}</Text>
+          <Text style={styles.statLabel}>Best Score</Text>
+        </View>
+      </View>
+
+      <Text style={styles.sectionTitle}>Recent Scans</Text>
+    </>
+  );
+
+  const renderEmpty = () => {
+    if (isLoading) {
+      return <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />;
+    }
+    if (error) {
+      return (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>{error}</Text>
+          <TouchableOpacity onPress={loadReceipts} style={styles.retryButton}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.emptyState}>
+        <Text style={styles.emptyText}>No scans yet. Start with your first meal!</Text>
+      </View>
+    );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.welcome}>Welcome back,</Text>
-          <Text style={styles.username}>{user?.display_name || 'Friend'}</Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.scanButton}
-          onPress={() => router.push('/(tabs)/scan')}
-        >
-          <Camera size={24} color={COLORS.dark} />
-          <Text style={styles.scanButtonText}>Start Scanning</Text>
-        </TouchableOpacity>
-
-        <View style={styles.statsContainer}>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{user?.total_scans || 0}</Text>
-            <Text style={styles.statLabel}>Scans</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statValue}>{(user?.best_value_score || 0).toFixed(0)}</Text>
-            <Text style={styles.statLabel}>Best Score</Text>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Scans</Text>
-
-          {isLoading ? (
-            <ActivityIndicator size="large" color={COLORS.primary} style={styles.loader} />
-          ) : receipts.length > 0 ? (
-            <View style={styles.receiptsList}>
-              {receipts.map((receipt) => (
-                <TouchableOpacity key={receipt.id} style={styles.receiptCard}>
-                  <View style={styles.receiptHeader}>
-                    <Text style={styles.restaurantName}>{receipt.restaurant_name}</Text>
-                    <Text
-                      style={[
-                        styles.value,
-                        { color: getValueColor(receipt.calories_per_dollar) },
-                      ]}
-                    >
-                      {receipt.calories_per_dollar?.toFixed(0) || 0} cals/$
-                    </Text>
-                  </View>
-                  <View style={styles.receiptFooter}>
-                    <Text style={styles.stats}>
-                      {receipt.total_calories} cal · ${receipt.total.toFixed(2)}
-                    </Text>
-                    <Text style={styles.date}>
-                      {new Date(receipt.created_at).toLocaleDateString()}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyText}>No scans yet. Start with your first meal!</Text>
-            </View>
-          )}
-        </View>
-      </ScrollView>
+      <FlatList
+        data={receipts}
+        renderItem={renderReceiptItem}
+        keyExtractor={keyExtractor}
+        ListHeaderComponent={renderListHeader}
+        ListEmptyComponent={renderEmpty}
+        contentContainerStyle={styles.content}
+      />
     </SafeAreaView>
   );
 }
@@ -127,15 +139,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.dark,
   },
-  scroll: {
-    flex: 1,
-  },
   content: {
     paddingHorizontal: THEME.spacing.md,
     paddingVertical: THEME.spacing.lg,
+    gap: THEME.spacing.md,
   },
   header: {
-    marginBottom: THEME.spacing.xl,
+    marginBottom: THEME.spacing.lg,
   },
   welcome: {
     fontSize: THEME.fonts.lg,
@@ -155,7 +165,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: THEME.spacing.xl,
+    marginBottom: THEME.spacing.lg,
     gap: THEME.spacing.sm,
   },
   scanButtonText: {
@@ -166,7 +176,7 @@ const styles = StyleSheet.create({
   statsContainer: {
     flexDirection: 'row',
     gap: THEME.spacing.md,
-    marginBottom: THEME.spacing.xl,
+    marginBottom: THEME.spacing.lg,
   },
   stat: {
     flex: 1,
@@ -186,17 +196,10 @@ const styles = StyleSheet.create({
     color: COLORS.gray400,
     marginTop: THEME.spacing.xs,
   },
-  section: {
-    marginBottom: THEME.spacing.lg,
-  },
   sectionTitle: {
     fontSize: THEME.fonts.xl,
     fontWeight: 'bold',
     color: COLORS.white,
-    marginBottom: THEME.spacing.md,
-  },
-  receiptsList: {
-    gap: THEME.spacing.md,
   },
   receiptCard: {
     backgroundColor: COLORS.gray800,
@@ -244,5 +247,18 @@ const styles = StyleSheet.create({
   emptyText: {
     color: COLORS.gray400,
     fontSize: THEME.fonts.base,
+  },
+  retryButton: {
+    marginTop: THEME.spacing.md,
+    paddingHorizontal: THEME.spacing.md,
+    paddingVertical: THEME.spacing.sm,
+    borderRadius: THEME.borderRadius.md,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  retryText: {
+    color: COLORS.primary,
+    fontSize: THEME.fonts.sm,
+    fontWeight: '600',
   },
 });

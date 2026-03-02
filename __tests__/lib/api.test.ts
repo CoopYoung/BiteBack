@@ -1,3 +1,4 @@
+import '../__mocks__/supabase-module-mock';
 import {
   getNutritionData,
   batchGetNutrition,
